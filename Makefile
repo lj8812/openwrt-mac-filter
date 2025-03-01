@@ -6,7 +6,7 @@ PKG_RELEASE:=1
 
 LUCI_TITLE:=MAC Address Filtering Plugin
 LUCI_PKGARCH:=all
-LUCI_DEPENDS:=+iptables +kmod-ipt-core +kmod-ipt-filter +luci-compat
+LUCI_DEPENDS:=+nftables +kmod-nft-core +kmod-nft-filter +luci-compat
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
