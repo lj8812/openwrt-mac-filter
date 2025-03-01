@@ -1,0 +1,3 @@
+config rule 'rule'
+    option mac ''           # 存储选择的 MAC 地址
+    option enabled '0'      # 0=不阻断 1=启用阻断
