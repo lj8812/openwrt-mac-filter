@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+start_service() {
+    /etc/init.d/mac-filter reload
+}
+
+reload_service() {
+    # 清空旧规则
+    ebtables -F FORWARD
+    
+    # 从 UCI 配置加载新规则
+    local blocked_mac
+    blocked_mac=$(uci -q get mac-filter.@rule[0].mac)
+    
+    if [ -n "$blocked_mac" ] && [ "$(uci -q get mac-filter.@rule[0].enabled)" = "1" ]; then
+        ebtables -A FORWARD -s "$blocked_mac" -j DROP
+    fi
+}
