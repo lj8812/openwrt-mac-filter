@@ -3,27 +3,28 @@
 START=99
 USE_PROCD=1
 
-RULES_COMMENT="MAC_FILTER"  # 规则标识
+NFT_TABLE="mac_filter"
+NFT_CHAIN="block_mac"
 
-start_service() {
-    /etc/init.d/mac-filter reload
-}
-
-flush_rules() {
-    # 清除所有带指定注释的规则
-    iptables-save | grep -v "$RULES_COMMENT" | iptables-restore
+service_triggers() {
+    procd_add_reload_trigger "mac-filter"
 }
 
 reload_service() {
     # 清除旧规则
-    flush_rules
+    nft delete table inet $NFT_TABLE 2>/dev/null
+    
+    # 创建新表和链
+    nft create table inet $NFT_TABLE
+    nft create chain inet $NFT_TABLE $NFT_CHAIN {
+        type filter hook forward priority 0 \; policy accept \;
+    }
 
-    # 从 UCI 配置加载新规则
-    local blocked_mac=$(uci -q get mac-filter.@rule[0].mac)
+    # 加载阻断规则
     local enabled=$(uci -q get mac-filter.@rule[0].enabled)
-
-    if [ "$enabled" = "1" ] && [ -n "$blocked_mac" ]; then
-        # 在 FORWARD 链插入规则（根据网络拓扑可能需要调整链）
-        iptables -I FORWARD -m mac --mac-source "$blocked_mac" -m comment --comment "$RULES_COMMENT" -j DROP
+    local mac=$(uci -q get mac-filter.@rule[0].mac)
+    
+    if [ "$enabled" = "1" ] && [ -n "$mac" ]; then
+        nft add rule inet $NFT_TABLE $NFT_CHAIN ether saddr $mac counter drop
     fi
 }
