@@ -1,3 +1,8 @@
-config rule 'rule'
-    option mac ''           # 存储选择的 MAC 地址
-    option enabled '0'      # 0=不阻断 1=启用阻断
+config macfilter 'global'
+    option enable '1'            # 总开关
+    option log '1'               # 日志开关
+
+config rule 'cfg123456'
+    option mac '00:11:22:33:44:55'
+    option action 'deny'         # allow 或 deny
+    option comment 'Block device'
