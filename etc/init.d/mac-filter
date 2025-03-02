@@ -3,28 +3,57 @@
 START=99
 USE_PROCD=1
 
-NFT_TABLE="mac_filter"
-NFT_CHAIN="block_mac"
+load_rules() {
+    # 清除旧规则
+    iptables -F MAC_FILTER 2>/dev/null
+    iptables -D FORWARD -j MAC_FILTER 2>/dev/null
+    iptables -X MAC_FILTER 2>/dev/null
 
-service_triggers() {
-    procd_add_reload_trigger "mac-filter"
+    # 创建专用链（插入到 FORWARD 链顶部）
+    iptables -N MAC_FILTER
+    iptables -I FORWARD 1 -j MAC_FILTER  # 关键修改：确保规则优先匹配
+
+    # 生成规则
+    local idx=0
+    while uci -q get "mac-filter.@rule[${idx}]" >/dev/null; do
+        local mac=$(uci -q get "mac-filter.@rule[${idx}].mac" | tr 'a-f' 'A-F')
+        local action=$(uci -q get "mac-filter.@rule[${idx}].action")
+        local log=$(uci -q get "mac-filter.global.log")
+
+        # 标准化 MAC 地址格式（确保大写且冒号分隔）
+        mac=$(echo "$mac" | sed 's/$..$/\1:/g; s/:$//')
+
+        case "$action" in
+            "deny")
+                target="DROP"
+                ;;
+            "allow")
+                target="ACCEPT"
+                ;;
+            *)
+                target="ACCEPT"
+                ;;
+        esac
+
+        # 添加核心过滤规则（关键修改：使用 -m mac 精确匹配）
+        iptables -A MAC_FILTER -m mac --mac-source "$mac" -j $target
+
+        # 日志记录（仅拒绝时记录）
+        if [ "$log" = "1" ] && [ "$action" = "deny" ]; then
+            iptables -A MAC_FILTER -m mac --mac-source "$mac" -j LOG --log-level 4 --log-prefix "MAC-FILTER-BLOCK: "
+        fi
+
+        idx=$((idx+1))
+    done
+
+    # 默认允许其他流量（仅在链末尾添加一次）
+    iptables -A MAC_FILTER -j ACCEPT
+}
+
+start_service() {
+    load_rules
 }
 
 reload_service() {
-    # 清除旧规则
-    nft delete table inet $NFT_TABLE 2>/dev/null
-    
-    # 创建新表和链
-    nft create table inet $NFT_TABLE
-    nft create chain inet $NFT_TABLE $NFT_CHAIN {
-        type filter hook forward priority 0 \; policy accept \;
-    }
-
-    # 加载阻断规则
-    local enabled=$(uci -q get mac-filter.@rule[0].enabled)
-    local mac=$(uci -q get mac-filter.@rule[0].mac)
-    
-    if [ "$enabled" = "1" ] && [ -n "$mac" ]; then
-        nft add rule inet $NFT_TABLE $NFT_CHAIN ether saddr $mac counter drop
-    fi
+    load_rules
 }
