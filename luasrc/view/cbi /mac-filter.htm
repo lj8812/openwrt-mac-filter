@@ -1,0 +1,73 @@
+<%+cbi/tblsection.html%>
+
+<% 
+    -- 定义 MAC 地址格式验证函数
+    luci.util.cbi_validate_mac = function(mac)
+        return mac:upper():match("^[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]$")
+    end
+
+    -- 动态加载当前网络中的 MAC 地址（与 CBI 模块逻辑同步）
+    local uci = require "luci.model.uci".cursor()
+    local fs = require "nixio.fs"
+    local macs = {}
+
+    -- 从 ARP 表获取
+    local arp = fs.readfile("/proc/net/arp")
+    if arp then
+        for line in arp:gmatch("[^\r\n]+") do
+            if not line:match("IP address") then
+                local ip, _, _, mac = line:match("^(%S+)%s+%S+%s+%S+%s+(%S+)")
+                if mac and mac ~= "00:00:00:00:00:00" then
+                    mac = mac:upper()
+                    macs[mac] = ip and ("%s (%s)" % {mac, ip}) or mac
+                end
+            end
+        end
+    end
+
+    -- 从 DHCP 租约获取
+    local leases = fs.readfile("/tmp/dhcp.leases")
+    if leases then
+        for line in leases:gmatch("[^\r\n]+") do
+            local ts, mac, ip, name = line:match("^(%d+) (%S+) (%S+) (%S+)")
+            if mac then
+                mac = mac:upper()
+                if not macs[mac] then
+                    macs[mac] = "%s (DHCP)" % mac
+                end
+            end
+        end
+    end
+%>
+
+<script type="text/javascript">
+    // 动态填充 MAC 地址下拉菜单（客户端增强）
+    document.addEventListener("DOMContentLoaded", function() {
+        var macSelects = document.querySelectorAll('input[name*=".mac"]');
+        macSelects.forEach(function(input) {
+            var datalist = document.createElement('datalist');
+            datalist.id = 'mac-list-' + Math.random().toString(36).substr(2, 9);
+            
+            <% for mac, desc in pairs(macs) do %>
+                var option = document.createElement('option');
+                option.value = '<%=mac%>';
+                option.textContent = '<%=desc%>';
+                datalist.appendChild(option);
+            <% end %>
+            
+            input.parentNode.insertBefore(datalist, input.nextSibling);
+            input.setAttribute('list', datalist.id);
+            input.setAttribute('placeholder', '<%=translate("Select or enter MAC")%>');
+        });
+    });
+</script>
+
+<!-- 自定义表格样式 -->
+<style>
+    .cbi-section-table .tr[data-sid] td:nth-child(1) {
+        width: 30%;
+    }
+    .cbi-section-table input[type="text"] {
+        width: 98%;
+    }
+</style>
